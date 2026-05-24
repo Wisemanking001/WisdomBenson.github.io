@@ -198,7 +198,7 @@ const educationItems = [
   },
   {
     school: "University of Nigeria Nsukka",
-    degree: "Bachelor of Science in Physics, First-Class Honors",
+    degree: "Bachelor of Science in Physics with Honors",
     meta: "Nsukka, Nigeria | Completed June 2021",
     body: "Undergraduate research on density functional theory for methylammonium lead iodide perovskite.",
   },
@@ -265,7 +265,7 @@ const awards = [
   "APS Student Ambassador, 2024-2025 and 2025-2026 terms",
   "NCCU International Student Award, 2024",
   "MSc Physics with Honors, North Carolina Central University, 2024",
-  "BSc Physics with First-Class Honors, University of Nigeria Nsukka, 2021",
+  "BSc Physics with Honors, University of Nigeria Nsukka, 2021",
 ]
 
 function App() {

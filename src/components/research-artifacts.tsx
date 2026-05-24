@@ -1,6 +1,8 @@
 import { useEffect, useMemo, useRef, type CSSProperties } from "react"
 import type * as Three from "three"
 
+import { Badge } from "@/components/ui/badge"
+
 export type ResearchArtifactKind = "nanocrystal" | "raman" | "perovskite"
 
 type ResearchArtifactProps = {
@@ -12,29 +14,40 @@ const artifactCopy = {
   nanocrystal: {
     label: "finite ZnO nanocrystal",
     metric: "DFT | DFPT | PDEP-GW",
+    compactMetric: "DFT / GW model",
     caption: "Passivated Zn/O lattice, orbital shell, and surface sites",
   },
   raman: {
     label: "Raman spectra map",
     metric: "532 nm | power sweep",
+    compactMetric: "532 nm power sweep",
     caption: "Temperature bands, excitation power, and phonon shifts",
   },
   perovskite: {
     label: "tin-lead perovskite lattice",
     metric: "Sn/Pb | FA/Cs | I/Br",
+    compactMetric: "Sn/Pb alloy lattice",
     caption: "Mixed B-site engineering and halide octahedra",
   },
-} satisfies Record<ResearchArtifactKind, { label: string; metric: string; caption: string }>
+} satisfies Record<ResearchArtifactKind, { label: string; metric: string; compactMetric: string; caption: string }>
 
 export function ResearchArtifact({ kind, compact = false }: ResearchArtifactProps) {
   const copy = artifactCopy[kind]
 
   return (
     <div className={compact ? "artifact-frame artifact-frame-compact" : "artifact-frame"}>
-      <div className="artifact-topline">
-        <span>{copy.label}</span>
-        <span>{copy.metric}</span>
-      </div>
+      {compact ? (
+        <div className="artifact-compact-meta">
+          <Badge variant="secondary" className="artifact-compact-badge">
+            {copy.compactMetric}
+          </Badge>
+        </div>
+      ) : (
+        <div className="artifact-topline">
+          <span>{copy.label}</span>
+          <span>{copy.metric}</span>
+        </div>
+      )}
       {kind === "raman" ? <RamanArtifact /> : <ThreeResearchArtifact kind={kind} />}
       <div className="artifact-caption">
         <span>{copy.caption}</span>
