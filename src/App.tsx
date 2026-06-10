@@ -42,15 +42,34 @@ const phoneNumber = "+1 984-312-9015"
 const fromBase = (path: string) => `${import.meta.env.BASE_URL}${path}`
 const sectionHref = (id: string) => `${import.meta.env.BASE_URL}#${id}`
 const resumeHref = fromBase("wisdom-benson-resume.docx")
+const blogHref = fromBase("blog/")
+const githubIssuesApi = "https://api.github.com/repos/Wisemanking001/WisdomBenson.github.io/issues?state=open&labels=blog-post&per_page=30"
+const newBlogIssueHref = "https://github.com/Wisemanking001/WisdomBenson.github.io/issues/new?template=blog-post.yml"
 
 const navItems = [
   { label: "Research", href: sectionHref("research") },
   { label: "Publications", href: sectionHref("publications") },
-  { label: "Blog", href: sectionHref("blog") },
+  { label: "Blog", href: blogHref },
   { label: "CV", href: sectionHref("cv") },
   { label: "Experience", href: sectionHref("experience") },
   { label: "Contact", href: sectionHref("contact") },
 ]
+
+type GitHubIssue = {
+  number: number
+  title: string
+  body: string | null
+  html_url: string
+  created_at: string
+  labels: Array<{ name: string }>
+  pull_request?: unknown
+}
+
+type DisplayBlogPost = BlogPost & {
+  href?: string
+  issueNumber?: number
+  source: "starter" | "github"
+}
 
 const metrics = [
   { value: "5", label: "journal articles and thesis publications" },
@@ -274,7 +293,10 @@ const awards = [
 ]
 
 function App() {
+  const isBlogPage = window.location.pathname.endsWith("/blog/") || window.location.pathname.endsWith("/blog/index.html")
+
   useEffect(() => {
+    if (isBlogPage) return
     if (!window.location.hash) return
 
     const scrollToHashTarget = () => {
@@ -283,7 +305,18 @@ function App() {
 
     window.requestAnimationFrame(scrollToHashTarget)
     window.setTimeout(scrollToHashTarget, 300)
-  }, [])
+  }, [isBlogPage])
+
+  if (isBlogPage) {
+    return (
+      <div className="min-h-dvh bg-background text-foreground">
+        <SiteHeader />
+        <main>
+          <BlogPage />
+        </main>
+      </div>
+    )
+  }
 
   return (
     <div className="min-h-dvh bg-background text-foreground">
@@ -292,7 +325,6 @@ function App() {
         <HeroSection />
         <ResearchSection />
         <PublicationsSection />
-        <BlogSection />
         <CVSection />
         <ExperienceSection />
         <ContactSection />
@@ -584,26 +616,159 @@ function PublicationGrid({ items }: { items: typeof journalArticles }) {
   )
 }
 
-function BlogSection() {
+function issueToBlogPost(issue: GitHubIssue): DisplayBlogPost {
+  const body = issue.body?.trim() || "This article was published from a GitHub issue. Add a body to the issue to show the full essay here."
+  const articleBody = issueArticleBody(body)
+  const labelCategories = issue.labels
+    .map((label) => label.name)
+    .filter((label): label is BlogCategory => blogCategories.includes(label as BlogCategory))
+  const topicCategories = issueTopics(body)
+  const categories = topicCategories.length ? topicCategories : labelCategories
+
+  return {
+    slug: `issue-${issue.number}-${slugify(issue.title)}`,
+    title: issue.title,
+    date: new Intl.DateTimeFormat("en", { month: "long", day: "numeric", year: "numeric" }).format(new Date(issue.created_at)),
+    readTime: `${Math.max(1, Math.ceil(articleBody.split(/\s+/).length / 220))} min read`,
+    mode: issueMode(issue.labels.map((label) => label.name), body),
+    categories: categories.length ? categories : ["Field Notes"],
+    summary: issueSummary(articleBody),
+    body: issueBodySections(articleBody),
+    href: issue.html_url,
+    issueNumber: issue.number,
+    source: "github",
+  }
+}
+
+function issueMode(labels: string[], body: string): BlogPost["mode"] {
+  const normalized = labels.map((label) => label.toLowerCase())
+  if (normalized.includes("essay")) return "Essay"
+  if (normalized.includes("research-note")) return "Research note"
+  if (normalized.includes("build-log")) return "Build log"
+  const fieldMode = issueField(body, "Mode").toLowerCase()
+  if (fieldMode.includes("essay")) return "Essay"
+  if (fieldMode.includes("research note")) return "Research note"
+  if (fieldMode.includes("build log")) return "Build log"
+  return "Notebook"
+}
+
+function issueTopics(body: string) {
+  const topics = issueField(body, "Topics")
+  if (!topics) return []
+
+  return topics
+    .split(/,|\n/)
+    .map((topic) => topic.trim())
+    .filter((topic): topic is BlogCategory => blogCategories.includes(topic as BlogCategory))
+}
+
+function issueArticleBody(body: string) {
+  const article = issueField(body, "Article body")
+  return article || body
+}
+
+function issueField(body: string, fieldName: string) {
+  const escapedField = fieldName.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")
+  const match = body.match(new RegExp(`### ${escapedField}\\s*\\n([\\s\\S]*?)(?=\\n### |$)`, "i"))
+  return match?.[1]?.trim() ?? ""
+}
+
+function issueSummary(body: string) {
+  const firstParagraph = body
+    .split(/\n{2,}/)
+    .map((part) => part.replace(/^#+\s+/gm, "").trim())
+    .find((part) => part && !part.toLowerCase().startsWith("topics:"))
+
+  if (!firstParagraph) return "A public article from Wisdom Benson's GitHub-backed blog."
+  return firstParagraph.length > 220 ? `${firstParagraph.slice(0, 217).trim()}...` : firstParagraph
+}
+
+function issueBodySections(body: string): BlogPost["body"] {
+  const cleanBody = body.replace(/^topics:.*$/gim, "").trim()
+  const chunks = cleanBody.split(/\n(?=##\s+)/).filter(Boolean)
+
+  if (!chunks.length) {
+    return [{ heading: "Article", paragraphs: ["This post is waiting for article body content."] }]
+  }
+
+  return chunks.map((chunk, index) => {
+    const lines = chunk.split("\n").map((line) => line.trim()).filter(Boolean)
+    const headingLine = lines[0]?.startsWith("## ") ? lines.shift() : null
+    const paragraphs = lines
+      .join("\n")
+      .split(/\n{2,}/)
+      .map((paragraph) => paragraph.replace(/^[-*]\s+/gm, "").trim())
+      .filter(Boolean)
+
+    return {
+      heading: headingLine?.replace(/^##\s+/, "") ?? (index === 0 ? "Article" : "Notes"),
+      paragraphs: paragraphs.length ? paragraphs : ["This section is waiting for content."],
+    }
+  })
+}
+
+function slugify(value: string) {
+  return value
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/(^-|-$)/g, "")
+}
+
+function BlogPage() {
   const [activeCategory, setActiveCategory] = useState<BlogCategory | "All">("All")
   const [selectedSlug, setSelectedSlug] = useState(blogPosts[0].slug)
+  const [githubPosts, setGithubPosts] = useState<DisplayBlogPost[]>([])
+  const [postStatus, setPostStatus] = useState<"loading" | "ready" | "error">("loading")
+
+  const starterPosts = useMemo<DisplayBlogPost[]>(() => {
+    return blogPosts.map((post) => ({ ...post, source: "starter" }))
+  }, [])
+
+  useEffect(() => {
+    let cancelled = false
+
+    async function loadGitHubPosts() {
+      try {
+        const response = await fetch(githubIssuesApi)
+        if (!response.ok) throw new Error(`GitHub returned ${response.status}`)
+        const issues = (await response.json()) as GitHubIssue[]
+        if (cancelled) return
+
+        setGithubPosts(issues.filter((issue) => !issue.pull_request).map(issueToBlogPost))
+        setPostStatus("ready")
+      } catch {
+        if (cancelled) return
+        setPostStatus("error")
+      }
+    }
+
+    void loadGitHubPosts()
+
+    return () => {
+      cancelled = true
+    }
+  }, [])
+
+  const allPosts = useMemo<DisplayBlogPost[]>(() => {
+    return [...githubPosts, ...starterPosts]
+  }, [githubPosts, starterPosts])
 
   const visiblePosts = useMemo(() => {
-    if (activeCategory === "All") return blogPosts
-    return blogPosts.filter((post) => post.categories.includes(activeCategory))
-  }, [activeCategory])
+    if (activeCategory === "All") return allPosts
+    return allPosts.filter((post) => post.categories.includes(activeCategory))
+  }, [activeCategory, allPosts])
 
   const selectedPost = useMemo(() => {
-    return visiblePosts.find((post) => post.slug === selectedSlug) ?? visiblePosts[0] ?? blogPosts[0]
-  }, [selectedSlug, visiblePosts])
+    return visiblePosts.find((post) => post.slug === selectedSlug) ?? visiblePosts[0] ?? starterPosts[0]
+  }, [selectedSlug, starterPosts, visiblePosts])
 
   return (
-    <section id="blog" data-slot="blog" className="section-wrap border-t border-border">
+    <section id="blog" data-slot="blog" className="section-wrap">
       <div className="grid gap-8 lg:grid-cols-[0.9fr_1.1fr] lg:items-end">
         <SectionHeader
           eyebrow="Blog"
           title="Field notes across philosophy, computation, and materials research."
-          body="A public writing space for essays, research notebooks, build logs, and technical reflections across philosophy, ZnO and perovskite modeling, quantum computing, ML, OCaml, CUDA, and related work."
+          body="A public writing space for essays, research notebooks, build logs, and technical reflections. New posts can be published from GitHub Issues and appear here without changing the site code."
         />
         <Card className="rounded-lg border-border bg-card shadow-none">
           <CardContent className="p-5 sm:p-6">
@@ -612,15 +777,35 @@ function BlogSection() {
                 <MessageSquare className="size-5" aria-hidden="true" />
               </span>
               <div>
-                <h3 className="text-lg font-semibold leading-tight">Public comments are enabled per post.</h3>
+                <h3 className="text-lg font-semibold leading-tight">Publish from GitHub. Discuss in public.</h3>
                 <p className="mt-2 text-sm leading-6 text-muted-foreground">
-                  Readers can sign in with GitHub and leave comments through the discussion panel beneath each article.
+                  Create an issue labeled <span className="font-mono text-foreground">blog-post</span>; it becomes a public article. Readers can comment through the discussion panel beneath each post.
                 </p>
+                <div className="mt-5 flex flex-col gap-2 sm:flex-row">
+                  <Button asChild size="sm">
+                    <a href={newBlogIssueHref} target="_blank" rel="noreferrer">
+                      <FileText className="size-4" aria-hidden="true" />
+                      New article
+                    </a>
+                  </Button>
+                  <Button asChild variant="outline" size="sm">
+                    <a href="https://github.com/Wisemanking001/WisdomBenson.github.io/issues?q=is%3Aissue%20label%3Ablog-post" target="_blank" rel="noreferrer">
+                      <ExternalLink className="size-4" aria-hidden="true" />
+                      Manage posts
+                    </a>
+                  </Button>
+                </div>
               </div>
             </div>
           </CardContent>
         </Card>
       </div>
+
+      {postStatus === "error" ? (
+        <div className="mt-8 rounded-lg border border-border bg-card p-4 text-sm leading-6 text-muted-foreground">
+          GitHub posts could not be loaded right now, so the seeded articles are shown below. Refresh the page or check the repository issue label if a new post is missing.
+        </div>
+      ) : null}
 
       <div className="mt-10 flex flex-wrap gap-2" aria-label="Filter blog posts by topic">
         <Button
@@ -664,7 +849,7 @@ function BlogSection() {
   )
 }
 
-function BlogPostButton({ post, selected, onSelect }: { post: BlogPost; selected: boolean; onSelect: () => void }) {
+function BlogPostButton({ post, selected, onSelect }: { post: DisplayBlogPost; selected: boolean; onSelect: () => void }) {
   return (
     <button
       type="button"
@@ -675,6 +860,7 @@ function BlogPostButton({ post, selected, onSelect }: { post: BlogPost; selected
     >
       <div className="flex flex-wrap items-center gap-2">
         <Badge variant={selected ? "default" : "secondary"}>{post.mode}</Badge>
+        {post.source === "github" ? <Badge variant="outline">Public issue</Badge> : null}
         <span className="text-xs text-muted-foreground">{post.date}</span>
       </div>
       <h3 className="mt-3 text-lg font-semibold leading-snug text-foreground">{post.title}</h3>
@@ -690,7 +876,7 @@ function BlogPostButton({ post, selected, onSelect }: { post: BlogPost; selected
   )
 }
 
-function BlogReader({ post }: { post: BlogPost }) {
+function BlogReader({ post }: { post: DisplayBlogPost }) {
   return (
     <article data-slot="blog-reader">
       <Card className="rounded-lg border-border bg-card shadow-none">
@@ -698,6 +884,7 @@ function BlogReader({ post }: { post: BlogPost }) {
           <div className="flex flex-wrap items-center gap-2">
             <Badge>{post.mode}</Badge>
             <Badge variant="secondary">{post.readTime}</Badge>
+            {post.source === "github" ? <Badge variant="outline">Published from GitHub</Badge> : null}
             <span className="text-sm text-muted-foreground">{post.date}</span>
           </div>
           <h2 className="mt-5 text-3xl font-semibold leading-tight sm:text-4xl">{post.title}</h2>
@@ -709,6 +896,14 @@ function BlogReader({ post }: { post: BlogPost }) {
               </Badge>
             ))}
           </div>
+          {post.href ? (
+            <Button asChild variant="outline" size="sm" className="mt-6">
+              <a href={post.href} target="_blank" rel="noreferrer">
+                <ExternalLink className="size-4" aria-hidden="true" />
+                Open source issue
+              </a>
+            </Button>
+          ) : null}
 
           <Separator className="my-7" />
 
@@ -735,7 +930,7 @@ function BlogReader({ post }: { post: BlogPost }) {
   )
 }
 
-function BlogComments({ post }: { post: BlogPost }) {
+function BlogComments({ post }: { post: DisplayBlogPost }) {
   const commentsRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
@@ -748,7 +943,11 @@ function BlogComments({ post }: { post: BlogPost }) {
     script.async = true
     script.crossOrigin = "anonymous"
     script.setAttribute("repo", "Wisemanking001/WisdomBenson.github.io")
-    script.setAttribute("issue-term", `blog-${post.slug}`)
+    if (post.issueNumber) {
+      script.setAttribute("issue-number", String(post.issueNumber))
+    } else {
+      script.setAttribute("issue-term", `blog-${post.slug}`)
+    }
     script.setAttribute("label", "blog-comment")
     script.setAttribute("theme", "github-light")
     container.appendChild(script)
@@ -756,7 +955,7 @@ function BlogComments({ post }: { post: BlogPost }) {
     return () => {
       container.innerHTML = ""
     }
-  }, [post.slug])
+  }, [post.issueNumber, post.slug])
 
   return (
     <Card className="rounded-lg border-border bg-card shadow-none" data-slot="blog-comments">
@@ -911,10 +1110,14 @@ function ExperienceSection() {
         title="Research, teaching, mentoring, and software implementation."
         body="The through-line is hands-on scientific computing: from lab instruction and thin-film synthesis to many-body simulation workflows and analytics product work."
       />
-      <Accordion type="single" collapsible defaultValue="howard" className="mt-10 rounded-lg border border-border bg-card">
+      <Accordion type="single" collapsible defaultValue="howard" className="mt-10 grid gap-3">
         {experienceItems.map((item, index) => (
-          <AccordionItem key={item.role + item.place} value={index === 0 ? "howard" : item.place} className="px-5 sm:px-6">
-            <AccordionTrigger className="text-left hover:no-underline">
+          <AccordionItem
+            key={item.role + item.place}
+            value={index === 0 ? "howard" : item.place}
+            className="overflow-hidden rounded-lg border border-border bg-card px-5 shadow-none sm:px-6"
+          >
+            <AccordionTrigger className="py-5 text-left hover:no-underline">
               <div className="flex flex-col gap-1">
                 <span className="text-lg font-semibold">{item.role}</span>
                 <span className="text-sm font-normal text-muted-foreground">
@@ -922,8 +1125,8 @@ function ExperienceSection() {
                 </span>
               </div>
             </AccordionTrigger>
-            <AccordionContent>
-              <ul className="grid gap-3 pb-5 text-sm leading-6 text-muted-foreground">
+            <AccordionContent className="pb-5">
+              <ul className="grid gap-3 text-sm leading-6 text-muted-foreground">
                 {item.bullets.map((bullet) => (
                   <li key={bullet} className="grid grid-cols-[0.6rem_1fr] gap-3">
                     <span className="mt-2 size-1.5 rounded-full bg-primary" aria-hidden="true" />

@@ -8,6 +8,12 @@ export default defineConfig({
   base: '/WisdomBenson.github.io/',
   build: {
     chunkSizeWarningLimit: 900,
+    rollupOptions: {
+      input: {
+        main: path.resolve(__dirname, 'index.html'),
+        blog: path.resolve(__dirname, 'blog/index.html'),
+      },
+    },
   },
   plugins: [react(), tailwindcss()],
   resolve: {

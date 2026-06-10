@@ -1,0 +1,39 @@
+name: Blog post
+description: Publish a public article or essay on the website blog.
+title: "New blog post"
+labels: ["blog-post", "Field Notes"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Submit this issue to publish it on the public blog page. The issue title becomes the article title, and this issue body becomes the article body.
+  - type: input
+    id: topics
+    attributes:
+      label: Topics
+      description: Add one or more site topics such as Philosophy, Computational Materials, Quantum Computing, ML Research, OCaml, CUDA, or Field Notes.
+      placeholder: "Philosophy, CUDA"
+    validations:
+      required: true
+  - type: dropdown
+    id: mode
+    attributes:
+      label: Mode
+      options:
+        - Essay
+        - Research note
+        - Build log
+        - Notebook
+    validations:
+      required: true
+  - type: textarea
+    id: article
+    attributes:
+      label: Article body
+      description: Use Markdown headings like `## Section title` to structure the post.
+      placeholder: |
+        ## Opening
+
+        Write the article here.
+    validations:
+      required: true
